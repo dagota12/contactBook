@@ -4,12 +4,11 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"io"
 	"log"
 )
-
-const EncryptionKey = "976e888b6a111a0f8097f4de42b3b133" // Make sure this is exactly 32 bytes
 
 func Encrypt(text string, key string) string {
     block, err := aes.NewCipher([]byte(key))
@@ -38,4 +37,73 @@ func Decrypt(encryptedText string, key string) string {
     stream := cipher.NewCFBDecrypter(block, iv)
     stream.XORKeyStream(ciphertext, ciphertext)
     return string(ciphertext)
+}
+func EncryptWithSalt(plainText, key string) (string, string, error) {
+	// Generate a random IV (Initialization Vector)
+	iv := make([]byte, aes.BlockSize)
+	_, err := rand.Read(iv)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Create AES cipher block
+	block, err := aes.NewCipher([]byte(key))
+	if err != nil {
+		return "", "", err
+	}
+
+	// Pad plaintext to be multiple of block size
+	plainText = pad(plainText, aes.BlockSize)
+
+	// Encrypt the data using AES and IV
+	ciphertext := make([]byte, len(plainText))
+	mode := cipher.NewCBCEncrypter(block, iv)
+	mode.CryptBlocks(ciphertext, []byte(plainText))
+
+	// Encode the ciphertext and iv to base64 strings for storage
+	cipherTextBase64 := base64.StdEncoding.EncodeToString(ciphertext)
+	ivBase64 := base64.StdEncoding.EncodeToString(iv)
+
+	return cipherTextBase64, ivBase64, nil
+}
+
+func DecryptWithSalt(cipherTextBase64, ivBase64, key string) (string, error) {
+	// Decode the ciphertext and IV from base64
+	ciphertext, err := base64.StdEncoding.DecodeString(cipherTextBase64)
+	if err != nil {
+		return "", err
+	}
+	iv, err := base64.StdEncoding.DecodeString(ivBase64)
+	if err != nil {
+		return "", err
+	}
+
+	// Create AES cipher block
+	block, err := aes.NewCipher([]byte(key))
+	if err != nil {
+		return "", err
+	}
+
+	// Decrypt the data using AES and IV
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(ciphertext, ciphertext)
+
+	// Remove padding
+	plainText := string(unpad(ciphertext, aes.BlockSize))
+	return plainText, nil
+}
+
+// Padding functions (PKCS7)
+func pad(data string, blockSize int) string {
+	padding := blockSize - len(data)%blockSize
+	padText := make([]byte, padding)
+	for i := 0; i < padding; i++ {
+		padText[i] = byte(padding)
+	}
+	return data + string(padText)
+}
+
+func unpad(data []byte, blockSize int) []byte {
+	padding := int(data[len(data)-1])
+	return data[:len(data)-padding]
 }

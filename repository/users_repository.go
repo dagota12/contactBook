@@ -82,7 +82,10 @@ func (u *userRepository) UpdateUser(filter bson.M, user *domain.User) error {
 	}
 
 	// Perform the update
-	_, err := u.users.UpdateOne(context.TODO(), filter, bson.M{"$set": updateData})
+	updateRes, err := u.users.UpdateOne(context.TODO(), filter, bson.M{"$set": updateData})
+	if updateRes.ModifiedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
 	return err
 }
 

@@ -1,16 +1,19 @@
 package main
 
 import (
+	"findApi/api/routes"
 	"findApi/bootstrap"
-	"findApi/internal/encryptutil"
-	"log"
+	"findApi/repository/db"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main(){
 	env := bootstrap.LoadEnv()
-	log.Println(env)
-	enc := encryptutil.Encrypt("hello",encryptutil.EncryptionKey)
-	log.Println(enc)
-	dec := encryptutil.Decrypt(enc,encryptutil.EncryptionKey)
-	log.Println(dec)
+	router := gin.Default()
+	client := db.NewMongoClient(env)
+	db := client.Database(env.DB_NAME)
+
+	routes.SetupRoutes(router,db,env)
+	router.Run(":"+env.PORT)
 }

@@ -28,16 +28,6 @@ type UsersUseCase interface {
 	FindAllUsers() ([]*domain.User, error)
 }
 
-
-
-
-
-
-
-
-
-
-
 type usersUseCase struct {
 	repo repository.UsersRepo
 }

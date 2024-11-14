@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log"
 )
@@ -106,4 +107,55 @@ func pad(data string, blockSize int) string {
 func unpad(data []byte, blockSize int) []byte {
 	padding := int(data[len(data)-1])
 	return data[:len(data)-padding]
+}
+
+// EncryptECB encrypts the given plaintext using AES in ECB mode
+func EncryptECB(plaintext string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	// Ensure plaintext is a multiple of AES block size by padding
+	plaintextBytes := []byte(plaintext)
+	padding := aes.BlockSize - len(plaintextBytes)%aes.BlockSize
+	for i := 0; i < padding; i++ {
+		plaintextBytes = append(plaintextBytes, byte(padding))
+	}
+
+	ciphertext := make([]byte, len(plaintextBytes))
+	for start := 0; start < len(plaintextBytes); start += aes.BlockSize {
+		block.Encrypt(ciphertext[start:start+aes.BlockSize], plaintextBytes[start:start+aes.BlockSize])
+	}
+
+	return hex.EncodeToString(ciphertext), nil
+}
+
+// DecryptECB decrypts the given hex-encoded ciphertext using AES in ECB mode
+func DecryptECB(cipherHex string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+
+	ciphertext, err := hex.DecodeString(cipherHex)
+	if err != nil {
+		return "", err
+	}
+
+	// Ensure ciphertext length is a multiple of the block size
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return "", errors.New("invalid ciphertext length")
+	}
+
+	plaintextBytes := make([]byte, len(ciphertext))
+	for start := 0; start < len(ciphertext); start += aes.BlockSize {
+		block.Decrypt(plaintextBytes[start:start+aes.BlockSize], ciphertext[start:start+aes.BlockSize])
+	}
+
+	// Remove padding
+	padding := int(plaintextBytes[len(plaintextBytes)-1])
+	plaintextBytes = plaintextBytes[:len(plaintextBytes)-padding]
+
+	return string(plaintextBytes), nil
 }

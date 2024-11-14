@@ -14,7 +14,6 @@ func NewMongoClient(env *bootstrap.Env) *mongo.Client{
 	options := options.Client().ApplyURI(env.MONGO_URI)
 	client,err := mongo.Connect(context.TODO(),options)
 
-
 	if err != nil{
 		log.Fatal("Faild to connect to db:" + err.Error())
 	}

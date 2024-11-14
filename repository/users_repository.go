@@ -6,9 +6,11 @@ import (
 	"findApi/bootstrap"
 	"findApi/domain"
 	"findApi/internal/encryptutil"
+	"log"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -29,7 +31,7 @@ type userRepository struct {
 
 // FindAll retrieves all users from the collection
 func (u *userRepository) FindAll() ([]*domain.User, error) {
-	var users []*domain.User
+	var users = make([]*domain.User, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -46,8 +48,8 @@ func (u *userRepository) FindAll() ([]*domain.User, error) {
 		}
 
 		// Decrypt user data before returning
-		user.Username = encryptutil.Decrypt(user.Username, u.SECRET_KEY)
-		user.Phone = encryptutil.Decrypt(user.Phone, u.SECRET_KEY)
+		user.Username, _ = encryptutil.DecryptECB(user.Username, []byte(u.SECRET_KEY))
+		user.Phone, _ = encryptutil.DecryptECB(user.Phone, []byte(u.SECRET_KEY))
 		users = append(users, &user)
 	}
 
@@ -60,13 +62,25 @@ func (u *userRepository) FindAll() ([]*domain.User, error) {
 
 // GetByUsername retrieves a user by username
 func (u *userRepository) GetByUsername(username string) (*domain.User, error) {
-	filter := bson.M{"username": encryptutil.Encrypt(username, u.SECRET_KEY)}
+	// Encrypt the username for querying
+	encUsername, err := encryptutil.EncryptECB(username, []byte(u.SECRET_KEY))
+	if err != nil {
+		return nil, err
+	}
+
+	filter := bson.M{"username": encUsername}
 	return u.GetUser(filter)
 }
 
 // GetByPhone retrieves a user by phone number
 func (u *userRepository) GetByPhone(phone string) (*domain.User, error) {
-	filter := bson.M{"phone": encryptutil.Encrypt(phone, u.SECRET_KEY)}
+	// Encrypt the phone for querying
+	encPhone, err := encryptutil.EncryptECB(phone, []byte(u.SECRET_KEY))
+	if err != nil {
+		return nil, err
+	}
+
+	filter := bson.M{"phone": encPhone}
 	return u.GetUser(filter)
 }
 
@@ -75,10 +89,19 @@ func (u *userRepository) UpdateUser(filter bson.M, user *domain.User) error {
 	// Prepare update data with encryption
 	updateData := bson.M{}
 	if user.Username != "" {
-		updateData["username"] = encryptutil.Encrypt(user.Username, u.SECRET_KEY)
+		encUsername, err := encryptutil.EncryptECB(user.Username, []byte(u.SECRET_KEY))
+		if err != nil {
+			return err
+		}
+		updateData["username"] = encUsername
 	}
+
 	if user.Phone != "" {
-		updateData["phone"] = encryptutil.Encrypt(user.Phone, u.SECRET_KEY)
+		encPhone, err := encryptutil.EncryptECB(user.Phone, []byte(u.SECRET_KEY))
+		if err != nil {
+			return err
+		}
+		updateData["phone"] = encPhone
 	}
 
 	// Perform the update
@@ -91,25 +114,40 @@ func (u *userRepository) UpdateUser(filter bson.M, user *domain.User) error {
 
 // DeleteUser deletes a user by filter
 func (u *userRepository) DeleteUser(filter bson.M) error {
-	_, err := u.users.DeleteOne(context.TODO(), filter)
+	delRes, err := u.users.DeleteOne(context.TODO(), filter)
+	if delRes.DeletedCount == 0 {
+		return mongo.ErrNoDocuments
+	}
 	return err
 }
 
 // InsertUser adds a new user to the collection
 func (u *userRepository) InsertUser(user *domain.User) (*domain.User, error) {
 	// Encrypt sensitive fields
-	user.Username = encryptutil.Encrypt(user.Username, u.SECRET_KEY)
-	user.Phone = encryptutil.Encrypt(user.Phone, u.SECRET_KEY)
-
-	_, err := u.users.InsertOne(context.TODO(), user)
+	encUsername, err := encryptutil.EncryptECB(user.Username, []byte(u.SECRET_KEY))
 	if err != nil {
 		return nil, err
 	}
 
+	encPhone, err := encryptutil.EncryptECB(user.Phone, []byte(u.SECRET_KEY))
+	if err != nil {
+		return nil, err
+	}
+
+	// Set encrypted values in the user struct
+	user.Username = encUsername
+	user.Phone = encPhone
+
+	res, err := u.users.InsertOne(context.TODO(), user)
+	if err != nil {
+		return nil, err
+	}
+	log.Println(res.InsertedID)
+	user.ID = res.InsertedID.(primitive.ObjectID)
 	return user, nil
 }
 
-// GetUser retrieves a user by a generic filter
+// GetUser retrieves a user by a generic filter and decrypts sensitive data
 func (u *userRepository) GetUser(filter bson.M) (*domain.User, error) {
 	var user domain.User
 	err := u.users.FindOne(context.TODO(), filter).Decode(&user)
@@ -121,8 +159,8 @@ func (u *userRepository) GetUser(filter bson.M) (*domain.User, error) {
 	}
 
 	// Decrypt sensitive data
-	user.Username = encryptutil.Decrypt(user.Username, u.SECRET_KEY)
-	user.Phone = encryptutil.Decrypt(user.Phone, u.SECRET_KEY)
+	user.Username, _ = encryptutil.DecryptECB(user.Username, []byte(u.SECRET_KEY))
+	user.Phone, _ = encryptutil.DecryptECB(user.Phone, []byte(u.SECRET_KEY))
 
 	return &user, nil
 }
